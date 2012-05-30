@@ -91,5 +91,55 @@ sub parents {
     return map { $self->git->get_object( $_ ) } @{$self->parent_sha1s};
 }
 
+=head2 has_ancestor_sha1
+
+Traverses up the parentage of the object graph to find out if the given C<sha1> appears as an ancestor.
+
+  if ( $commit_object->has_ancestor_sha1( 'deadbeef' x  5 ) ) {
+    ...
+  }
+
+=cut
+
+sub has_ancestor_sha1 {
+    my ( $self, $sha1 ) = @_;
+
+    # This may seem redundant, but its not entirely.
+    # However, its a penalty paid for the branch shortening optimization.
+    #
+    # x^, y^ , z^ , y[ y^ , y... ] , z[ z^ , z... ]
+    #
+    # Will still be faster than
+    #
+    # x^, y[ y^ , y... ] , z[ z^ , z... ]
+    #
+    # In the event y is very long.
+
+    return 1 if $self->sha1 eq $sha1;
+
+    # This is a slight optimization of sorts,
+    # as it means
+    #   x->{ y->{ y' } , z->{ z' } }
+    # has a check order of:
+    #   x^, y^ , z^ , y[ y^ , ... ], z[ z^, ... ]
+    # instead of
+    #   x^, y[ y^, y... ], z[ z^, z... ]
+    # Which will probably make things a bit faster if y is incredibly large
+    # and you just want to check if a given commit x has a direct ancestor i.
+
+    for my $parent ( @{ $self->parent_sha1s } ) {
+        return 1 if $parent eq $sha1;
+    }
+
+    # Depth First.
+    # TODO perhaps make it breadth first? could be very useful on very long repos
+    # where the given ancestor might not be in the "first-parent" ancestry line.
+    # But if somebody wants this feature, they'll have to provide the benchmarks, the code, or both.
+
+    for my $parent ( $self->parents ) {
+        return 1 if $parent->has_ancestor_sha1( $sha1, );
+    }
+    return;
+}
 __PACKAGE__->meta->make_immutable;
 

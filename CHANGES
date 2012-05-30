@@ -1,5 +1,6 @@
 Revision history for Perl module Git::PurePerl:
 
+     - Add has_ancestor_sha1 method to Object::Commit (Kent Fredric)
      - Add Git::PurePerl::Util with handy current_git_dir() util (Kent Fredric)
 
 0.50 Sat Jan 25 14:58:16 CET 2014
