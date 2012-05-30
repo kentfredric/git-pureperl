@@ -63,6 +63,13 @@ sub BUILD {
     $self->comment( decode($encoding, join "\n", @lines) );
 }
 
+=head1 METHODS
+
+=head2 tree
+
+Returns the L<< C<::Tree>|Git::PurePerl::Object::Tree >> associated with this commit.
+
+=cut
 
 sub tree {
     my $self = shift;
@@ -76,14 +83,32 @@ sub _push_parent_sha1 {
     push(@{$self->parent_sha1s}, $sha1);
 }
 
+=head2 parent_sha1
+
+Returns the C<sha1> for the first parent of this this commit.
+
+=cut
+
 sub parent_sha1 {
     return shift->parent_sha1s->[0];
 }
-  
+
+=head2 parent
+
+Returns the L<< C<::Commit>|Git::PurePerl::Object::Commit >> for this commits first parent.
+
+=cut
+
 sub parent {
     my $self = shift;
     return $self->git->get_object( $self->parent_sha1 );
 }
+
+=head2 parents
+
+Returns L<< C<::Commit>s|Git::PurePerl::Object::Commit >> for all this commits parents.
+
+=cut
 
 sub parents {
     my $self = shift;
