@@ -18,12 +18,14 @@ has 'committer' =>
 has 'committed_time' => ( is => 'rw', isa => 'DateTime', required => 0 );
 has 'comment'        => ( is => 'rw', isa => 'Str',      required => 0 );
 has 'encoding'       => ( is => 'rw', isa => 'Str',      required => 0 );
+has 'gpg_signature'  => ( is => 'rw', isa => 'Str',      required => 0 );
 
 my %method_map = (
     'tree'      => 'tree_sha1',
     'parent'    => '_push_parent_sha1',
     'author'    => 'authored_time',
-    'committer' => 'committed_time'
+    'committer' => 'committed_time',
+    'gpgsig'    => 'gpg_signature',
 );
 
 sub BUILD {
@@ -32,6 +34,26 @@ sub BUILD {
     my @lines = split "\n", $self->content;
     my %header;
     while ( my $line = shift @lines ) {
+
+    # Apparent format is roughly:
+    #
+    # <token><space><DATA>
+    # <space><DATA>        # repeated
+    #
+    # And a line not leading with <space> ends the token.
+    #
+    # Though, at present, git itself has this special-cased for GPG Signatures.
+    #
+    # Its probably extendable to support any value of <token> though.
+        if ( $line =~ /^gpgsig (.*$)/ ) {
+            my $sig = "$1";
+            while ( $line = $lines[0] ) {
+                last unless $line =~ /^ (.*$)/;
+                $sig .= "$1\n";
+                shift @lines;
+            }
+            push @{ $header{gpgsig} }, $sig;
+        }
         last unless $line;
         my ( $key, $value ) = split ' ', $line, 2;
         push @{$header{$key}}, $value;

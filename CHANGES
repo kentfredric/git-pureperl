@@ -1,5 +1,6 @@
 Revision history for Perl module Git::PurePerl:
 
+     - Add decoding support for the new gpgsig commit header (Kent Fredric)
      - Add basic documentation for Object::Commit (Kent Fredric)
      - Add has_ancestor_sha1 method to Object::Commit (Kent Fredric)
      - Add Git::PurePerl::Util with handy current_git_dir() util (Kent Fredric)
