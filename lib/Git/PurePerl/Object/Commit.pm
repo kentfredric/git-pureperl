@@ -18,7 +18,8 @@ has 'committer' =>
 has 'committed_time' => ( is => 'rw', isa => 'DateTime', required => 0 );
 has 'comment'        => ( is => 'rw', isa => 'Str',      required => 0 );
 has 'encoding'       => ( is => 'rw', isa => 'Str',      required => 0 );
-has 'gpg_signature'  => ( is => 'rw', isa => 'Str',      required => 0 );
+has 'gpg_signature' =>
+  ( is => 'rw', isa => 'Str', required => 0, predicate => 'has_gpg_signature' );
 
 my %method_map = (
     'tree'      => 'tree_sha1',
@@ -28,35 +29,112 @@ my %method_map = (
     'gpgsig'    => 'gpg_signature',
 );
 
+my %multiline_headers = ( gpgsig => 1, );
+
+
+sub _verify {
+    my ( $content, $signature ) = @_;
+    ##
+    ## This crap exists because there is no GnuPG module on CPAN that works.
+    ## Seriously.
+    ##
+    require File::Tempdir;
+    require File::Temp;
+    require GnuPG;
+    require File::Spec;
+    my $tmpdir =
+      File::Tempdir->new( 'GnuPG.XXXXX', DIR => File::Spec->tmpdir, );
+    my $dir = $tmpdir->name;
+    my ( $fh, $content_filename ) =
+      File::Temp::tempfile( "content.XXXXX", DIR => $dir );
+    my ( $sfh, $signature_filename ) =
+      File::Temp::tempfile( "signature.XXXXX", DIR => $dir );
+    $fh->print($content);
+    $sfh->print($signature);
+    $fh->close;
+    $sfh->close;
+    return GnuPG->new( gnupg_path => '/usr/bin/gpg', )->verify(
+        file      => $content_filename,
+        signature => $signature_filename,
+    );
+}
+sub verify_signature {
+    my $self = shift;
+    return if ( not $self->has_gpg_signature );
+    my ( $content, $sig ) =
+      $self->_extract_multiline( 'gpgsig', split qq{\n}, $self->content );
+    my $content_blob   = join qq{}, map { "$_\n" } @{$content};
+    my $signature_blob = join qq{}, map { "$_\n" } @{$sig};
+    return _verify( $content_blob, $signature_blob );
+}
+
+
+# Apparent format is roughly:
+#
+# <token><space><DATA>
+# <space><DATA>        # repeated
+#
+# And a line not leading with <space> ends the token.
+#
+# Though, at present, git itself has this special-cased for GPG Signatures.
+
+sub _extract_multiline {
+    my ( $self, $mltag, @lines ) = @_;
+    my @out;
+    my @sig_out;
+    my $i = 0;
+  headstep: while ( $i < $#lines ) {
+        my $line = $lines[$i];
+
+        if ( $line =~ /^\Q$mltag\E (.*$)/ ) {
+            push @sig_out, "$1";
+
+            $i++;
+            $line = $lines[$i];
+
+            # Walk down lines until ....
+          instep: while ( $i < $#lines ) {
+
+                # until you hit an unindented line
+                last instep if not $line =~ /^ (.*$)/;
+                push @sig_out, "$1";
+
+                $i++;
+                $line = $lines[$i];
+
+            }
+        }
+
+        # Empty line = end of header
+        if ( $line =~ /^$/ ) {
+            push @out, splice @lines, $i;
+            last headstep;
+        }
+
+        push @out, $line;
+        $i++;
+    }
+    return \@out, \@sig_out;
+}
+
 sub BUILD {
     my $self = shift;
     return unless $self->content;
     my @lines = split "\n", $self->content;
     my %header;
-    while ( my $line = shift @lines ) {
-
-    # Apparent format is roughly:
-    #
-    # <token><space><DATA>
-    # <space><DATA>        # repeated
-    #
-    # And a line not leading with <space> ends the token.
-    #
-    # Though, at present, git itself has this special-cased for GPG Signatures.
-    #
-    # Its probably extendable to support any value of <token> though.
-        if ( $line =~ /^gpgsig (.*$)/ ) {
-            my $sig = "$1";
-            while ( $line = $lines[0] ) {
-                last unless $line =~ /^ (.*$)/;
-                $sig .= "$1\n";
-                shift @lines;
-            }
-            push @{ $header{gpgsig} }, $sig;
-        }
+    while ( my $line = $lines[0] ) {
         last unless $line;
+
         my ( $key, $value ) = split ' ', $line, 2;
-        push @{$header{$key}}, $value;
+
+        if ( exists $multiline_headers{$key} ) {
+            my ( $out, $data ) = $self->_extract_multiline( $key, @lines );
+            push @{ $header{$key} }, join q{}, map { "$_\n" } @{$data};
+            @lines = @{$out};
+            next;
+        }
+        push @{ $header{$key} }, $value;
+        shift @lines;
     }
     $header{encoding}
         ||= [ $self->git->config->get(key => "i18n.commitEncoding") || "utf-8" ];
